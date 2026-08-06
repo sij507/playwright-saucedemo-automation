@@ -2,24 +2,58 @@ version: 2.1
 
 jobs:
   test:
+    parameters:
+      tag:
+        type: string
+        description: "Test tag to filter by, e.g. @smoke"
+      project_flag:
+        type: string
+        default: "--project=chromium"
+        description: "Playwright --project flag(s). Empty string runs every configured browser project."
     docker:
       - image: mcr.microsoft.com/playwright:v1.62.1-jammy
     resource_class: medium
     steps:
       - checkout
+      - restore_cache:
+          keys:
+            - npm-cache-v1-{{ checksum "package-lock.json" }}
+            - npm-cache-v1-
       - run:
           name: Install dependencies
           command: npm ci
+      - save_cache:
+          key: npm-cache-v1-{{ checksum "package-lock.json" }}
+          paths:
+            - ~/.npm
       - run:
-          name: Run Playwright tests
-          command: npx playwright test
+          name: Run << parameters.tag >> tests
+          command: npx playwright test --grep "<< parameters.tag >>" << parameters.project_flag >>
       - store_test_results:
           path: test-results
       - store_artifacts:
           path: playwright-report
           destination: playwright-report
+      - store_artifacts:
+          path: test-results
+          destination: test-results
 
 workflows:
-  test:
+  smoke:
     jobs:
-      - test
+      - test:
+          name: smoke
+          tag: "@smoke"
+
+  critical:
+    jobs:
+      - test:
+          name: critical
+          tag: "@critical"
+
+  regression:
+    jobs:
+      - test:
+          name: regression
+          tag: "@regression"
+          project_flag: ""
