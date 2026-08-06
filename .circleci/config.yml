@@ -40,6 +40,9 @@ jobs:
       - store_artifacts:
           path: screenshots
           destination: screenshots
+      - store_artifacts:
+          path: extent-report
+          destination: extent-report
 
 workflows:
   # Fast sanity check on every push to main.

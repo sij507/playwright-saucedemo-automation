@@ -10,6 +10,7 @@ module.exports = defineConfig({
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
     ['junit', { outputFile: 'test-results/junit.xml' }],
     ['list'],
+    ['./reporters/extent-reporter.js', { outputDir: 'extent-report' }],
   ],
   use: {
     baseURL: 'https://www.saucedemo.com',
