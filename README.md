@@ -81,15 +81,17 @@ npx playwright test --headed --debug       # step through with the Playwright in
 
 ## Running tests in CircleCI
 
-`.circleci/config.yml` defines three independent workflows, each wrapping the same parameterized `test` job:
+`.circleci/config.yml` defines three independent workflows, each wrapping the same parameterized `test` job, each on its own trigger:
 
-| Workflow     | Tag filter    | Browsers                     |
-|--------------|---------------|-------------------------------|
-| `smoke`      | `@smoke`      | Chromium only                |
-| `critical`   | `@critical`   | Chromium only                |
-| `regression` | `@regression` | Chromium, Firefox, and WebKit |
+| Workflow               | Tag filter    | Browsers                     | Trigger                                  |
+|-------------------------|---------------|-------------------------------|-------------------------------------------|
+| `smoke-on-main`         | `@smoke`      | Chromium only                 | Every push to `main`                      |
+| `critical-weekly`       | `@critical`   | Chromium only                 | Scheduled — every Monday 06:00 UTC        |
+| `regression-on-release` | `@regression` | Chromium, Firefox, and WebKit | Every push to `release` or `release/*`    |
 
-All three run automatically on every push. Because they're separate workflows, each can also be re-run independently from the CircleCI dashboard (or triggered via the CircleCI API) without re-running the others. Dependencies are installed with `npm ci` inside Microsoft's official `mcr.microsoft.com/playwright` Docker image (browsers pre-installed, matching the `@playwright/test` version pinned in `package.json`), and the npm cache is restored/saved between builds keyed on `package-lock.json`.
+Each workflow only fires on its own trigger — pushing to `main` runs smoke but not regression or critical; pushing to a `release` branch runs regression but not the others; critical runs on its weekly schedule regardless of pushes. Any workflow can still be re-run manually from the CircleCI dashboard. Dependencies are installed with `npm ci` inside Microsoft's official `mcr.microsoft.com/playwright` Docker image (browsers pre-installed, matching the `@playwright/test` version pinned in `package.json`), and the npm cache is restored/saved between builds keyed on `package-lock.json`.
+
+To change the schedule or branch patterns, edit the `filters` and `cron` values in `.circleci/config.yml`.
 
 ## Viewing Playwright reports
 

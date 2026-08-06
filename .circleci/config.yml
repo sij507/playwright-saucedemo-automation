@@ -39,21 +39,37 @@ jobs:
           destination: test-results
 
 workflows:
-  smoke:
+  # Fast sanity check on every push to main.
+  smoke-on-main:
     jobs:
       - test:
           name: smoke
           tag: "@smoke"
+          filters:
+            branches:
+              only: main
 
-  critical:
-    jobs:
-      - test:
-          name: critical
-          tag: "@critical"
-
-  regression:
+  # Full cross-browser regression on any release branch (release or release/*).
+  regression-on-release:
     jobs:
       - test:
           name: regression
           tag: "@regression"
           project_flag: ""
+          filters:
+            branches:
+              only: /^release(\/.*)?$/
+
+  # Core business-workflow check, once a week rather than on every push.
+  critical-weekly:
+    triggers:
+      - schedule:
+          # Every Monday at 06:00 UTC. Adjust to taste.
+          cron: "0 6 * * 1"
+          filters:
+            branches:
+              only: main
+    jobs:
+      - test:
+          name: critical
+          tag: "@critical"
