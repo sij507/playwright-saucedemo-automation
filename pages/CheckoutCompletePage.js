@@ -13,6 +13,7 @@ class CheckoutCompletePage extends BasePage {
 
   async backToProducts() {
     await this.backHomeButton.click();
+    await this.captureStep('ClickBackToProducts');
   }
 }
 

@@ -37,6 +37,9 @@ jobs:
       - store_artifacts:
           path: test-results
           destination: test-results
+      - store_artifacts:
+          path: screenshots
+          destination: screenshots
 
 workflows:
   # Fast sanity check on every push to main.

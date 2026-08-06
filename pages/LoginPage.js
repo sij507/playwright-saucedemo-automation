@@ -11,13 +11,16 @@ class LoginPage extends BasePage {
   }
 
   async goto() {
-    await this.gotoPath('/');
+    await this.gotoPath('/', 'OpenLoginPage');
   }
 
   async login(username, password) {
     await this.usernameInput.fill(username);
+    await this.captureStep('EnterUsername');
     await this.passwordInput.fill(password);
+    await this.captureStep('EnterPassword');
     await this.loginButton.click();
+    await this.captureStep('ClickLoginButton');
   }
 
   async getErrorMessage() {

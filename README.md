@@ -9,10 +9,10 @@ Playwright/
 ├── .circleci/
 │   └── config.yml            # smoke / critical / regression CircleCI jobs
 ├── fixtures/
-│   ├── base.js                # custom test/expect with page-object fixtures + login helper
+│   ├── base.js                # custom test/expect with page-object fixtures, login helper, auto-screenshot wiring
 │   └── testData.js            # users, credentials, error messages, checkout data
 ├── pages/
-│   ├── BasePage.js
+│   ├── BasePage.js            # shared navigation + captureStep() helper
 │   ├── LoginPage.js
 │   ├── InventoryPage.js
 │   ├── CartPage.js
@@ -25,11 +25,34 @@ Playwright/
 │   ├── checkout.spec.js
 │   ├── sorting.spec.js
 │   └── logout.spec.js
+├── utils/
+│   └── screenshotRecorder.js  # captureStep(): saves + names + attaches a step screenshot
+├── screenshots/                # generated per run, gitignored — see "Step screenshots" below
 ├── playwright.config.js
 └── package.json
 ```
 
 Each page in `pages/` exposes only locators and user actions for that page — tests never touch raw selectors. `fixtures/base.js` extends Playwright's `test` with one fixture per page object plus `loginAsStandardUser`, so any test that needs a logged-in session declares it as a fixture dependency instead of repeating the login flow. `fixtures/testData.js` centralizes users, expected error strings, and checkout data so tests read as assertions, not data entry.
+
+### Step screenshots
+
+Every navigation, user action, and assertion is screenshotted automatically — no test ever calls `page.screenshot()`:
+
+- Each `pages/*.js` method calls `this.captureStep('Description')` once after performing its action (e.g. `LoginPage.login()` captures `EnterUsername`, `EnterPassword`, `ClickLoginButton`).
+- `fixtures/base.js` wraps the shared `expect` export so every matcher (`toHaveText`, `toBeVisible`, `toHaveURL`, ...) captures a `Verify_<matcher>` step right after it resolves — pass or fail.
+- `fixtures/base.js` also wraps `page.goto()`/`page.reload()` on the `page` fixture itself, so the rare test that calls them directly (e.g. the direct-URL-without-login and refresh-mid-checkout tests) is still covered.
+
+All of this lives in `utils/screenshotRecorder.js`. Adding a new test or page-object method needs no extra wiring — as long as the action goes through a page object (or `page.goto`/`reload`/`expect`), it's captured for free.
+
+Screenshots are written to `screenshots/<TestFileName>/<Describe>/.../<TestTitle>/<TestFileName>_<NN>_<Step>.png`, e.g.:
+
+```
+screenshots/Login/Positive/LogsInWithValidCredentials/Login_01_OpenLoginPage.png
+screenshots/Login/Positive/LogsInWithValidCredentials/Login_02_EnterUsername.png
+screenshots/Login/Positive/LogsInWithValidCredentials/Login_05_VerifyToHaveURL.png
+```
+
+Each one is also attached to the Playwright HTML report (see [Viewing Playwright reports](#viewing-playwright-reports)) — open any test in the report and its steps show inline, in order, whether the test passed or failed.
 
 ## Installation
 
@@ -101,11 +124,12 @@ To change the schedule or branch patterns, edit the `filters` and `cron` values 
 npx playwright show-report
 ```
 
-This opens the HTML report (`playwright-report/`) with pass/fail status, and for failed tests, the screenshot, trace, and video captured on failure.
+This opens the HTML report (`playwright-report/`) — every test's **Test Steps** tab shows the per-step screenshots described above (for both passed and failed tests), and failed tests additionally get Playwright's own failure screenshot, trace, and video.
 
 **In CircleCI**, open a completed job and check the **Artifacts** tab:
 
 - `playwright-report/` — the HTML report (download and open `index.html`, or `npx playwright show-report <path>`)
 - `test-results/` — JUnit XML, plus per-failure screenshots, traces (`.zip`, open with `npx playwright show-trace <file>`), and videos
+- `screenshots/` — every per-step screenshot, organized by test, exactly as described in [Step screenshots](#step-screenshots)
 
 The **Tests** tab on the job also renders the JUnit results (`test-results/junit.xml`) inline.
