@@ -24,29 +24,33 @@ function withNavigationCapture(page) {
   const originalGoto = page.goto.bind(page);
   page.goto = async (...args) => {
     const description = page.__pendingStepDescription || `Navigate_${page.url()}`;
-    try {
-      const result = await originalGoto(...args);
-      page.__pendingStepDescription = null;
-      await captureStep(page, description);
-      return result;
-    } catch (error) {
-      page.__pendingStepDescription = null;
-      await captureStepFailure(page, description, error);
-      throw error;
-    }
+    return test.step(description, async () => {
+      try {
+        const result = await originalGoto(...args);
+        page.__pendingStepDescription = null;
+        await captureStep(page, description);
+        return result;
+      } catch (error) {
+        page.__pendingStepDescription = null;
+        await captureStepFailure(page, description, error);
+        throw error;
+      }
+    });
   };
 
   const originalReload = page.reload.bind(page);
   page.reload = async (...args) => {
     const description = `Reload_${page.url()}`;
-    try {
-      const result = await originalReload(...args);
-      await captureStep(page, description);
-      return result;
-    } catch (error) {
-      await captureStepFailure(page, description, error);
-      throw error;
-    }
+    return test.step(description, async () => {
+      try {
+        const result = await originalReload(...args);
+        await captureStep(page, description);
+        return result;
+      } catch (error) {
+        await captureStepFailure(page, description, error);
+        throw error;
+      }
+    });
   };
 
   return page;
@@ -156,14 +160,17 @@ function wrapAssertion(assertion, subject) {
 
       return async (...args) => {
         const page = resolvePageForScreenshot(subject);
-        try {
-          const result = await value.apply(target, args);
-          if (page) await captureStep(page, `Verify_${prop}`);
-          return result;
-        } catch (error) {
-          if (page) await captureStepFailure(page, `Verify_${prop}`, error);
-          throw error;
-        }
+        const description = `Verify_${prop}`;
+        return test.step(description, async () => {
+          try {
+            const result = await value.apply(target, args);
+            if (page) await captureStep(page, description);
+            return result;
+          } catch (error) {
+            if (page) await captureStepFailure(page, description, error);
+            throw error;
+          }
+        });
       };
     },
   });

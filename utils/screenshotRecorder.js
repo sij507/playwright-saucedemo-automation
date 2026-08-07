@@ -12,6 +12,17 @@ const SCREENSHOTS_ROOT = path.join(process.cwd(), 'screenshots');
 // see fixtures/base.js's `page` fixture for the full explanation.
 const stepCounters = new Map();
 
+// Descriptions can embed arbitrary test data (e.g. the "extremely long
+// input values" edge case fills a 1000-character username into "Enter
+// username: <value>"). Long enough and the sanitized filename blows past
+// the filesystem's ~255-byte limit, making page.screenshot({ path }) fail
+// silently (caught below) — so anything derived from the description, on
+// disk or in the report, uses this truncated form instead of the raw one.
+function truncate(text, maxLength = 80) {
+  const str = String(text);
+  return str.length > maxLength ? `${str.slice(0, maxLength)}…` : str;
+}
+
 function sanitizeSegment(text) {
   const cleaned = String(text)
     .replace(/[^a-zA-Z0-9]+(.)?/g, (_match, chr) => (chr ? chr.toUpperCase() : ''))
@@ -69,9 +80,10 @@ async function saveScreenshot(page, testInfo, stepNumber, description) {
 async function captureStep(page, description) {
   const testInfo = test.info();
   const stepNumber = nextStepNumber(testInfo.testId);
+  const safeDescription = truncate(description);
 
-  await saveScreenshot(page, testInfo, stepNumber, description);
-  logStep({ testId: testInfo.testId, testName: testInfo.title, stepNumber, description, status: 'PASS' });
+  await saveScreenshot(page, testInfo, stepNumber, safeDescription);
+  logStep({ testId: testInfo.testId, testName: testInfo.title, stepNumber, description: safeDescription, status: 'PASS' });
 }
 
 /**
@@ -83,16 +95,17 @@ async function captureStep(page, description) {
 async function captureStepFailure(page, description, error) {
   const testInfo = test.info();
   const stepNumber = nextStepNumber(testInfo.testId);
+  const safeDescription = truncate(description);
 
-  await saveScreenshot(page, testInfo, stepNumber, description);
+  await saveScreenshot(page, testInfo, stepNumber, safeDescription);
   logStep({
     testId: testInfo.testId,
     testName: testInfo.title,
     stepNumber,
-    description,
+    description: safeDescription,
     status: 'FAIL',
     error: error && error.message ? error.message : String(error),
   });
 }
 
-module.exports = { captureStep, captureStepFailure };
+module.exports = { captureStep, captureStepFailure, truncate };

@@ -1,4 +1,5 @@
-const { captureStep, captureStepFailure } = require('../utils/screenshotRecorder');
+const { test } = require('@playwright/test');
+const { captureStep, captureStepFailure, truncate } = require('../utils/screenshotRecorder');
 
 class BasePage {
   constructor(page) {
@@ -25,16 +26,29 @@ class BasePage {
    * step (with the error message) on failure — always re-throwing so the
    * test still fails normally. Page object methods use this instead of
    * calling captureStep manually after every action.
+   *
+   * Wrapped in test.step() so the extent-reporter picks this up as its own
+   * row, nested under whichever Given/When/Then step (from the `step`
+   * fixture) is currently running.
    */
   async perform(description, actionFn) {
-    try {
-      const result = await actionFn();
-      await this.captureStep(description);
-      return result;
-    } catch (error) {
-      await captureStepFailure(this.page, description, error);
-      throw error;
-    }
+    // Truncated once here (rather than inside captureStep) so the test.step()
+    // title, the saved screenshot's filename, and the console log line all
+    // agree on the same text — a page object can embed arbitrary test data
+    // into `description` (e.g. "Enter username: <value>"), and an untruncated
+    // step title would otherwise mismatch the truncated filename/attachment
+    // name captureStep produces.
+    const safeDescription = truncate(description);
+    return test.step(safeDescription, async () => {
+      try {
+        const result = await actionFn();
+        await this.captureStep(safeDescription);
+        return result;
+      } catch (error) {
+        await captureStepFailure(this.page, safeDescription, error);
+        throw error;
+      }
+    });
   }
 }
 

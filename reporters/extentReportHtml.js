@@ -256,6 +256,11 @@ table.steps-table tr:last-child td { border-bottom: none; }
   border: 1px solid var(--border);
   cursor: zoom-in;
 }
+.step-screenshot.step-screenshot-sm { max-width: 260px; }
+tr.step-row-scenario .step-text { font-weight: 700; }
+tr.step-row-nested { background: var(--bg); }
+tr.step-row-nested .step-text { color: var(--muted); }
+tr.step-row-nested .status-badge { font-size: 10px; padding: 2px 8px; }
 .screenshot-overlay {
   position: fixed;
   inset: 0;
@@ -353,18 +358,21 @@ const JS = `
   }
 
   function stepRow(step) {
-    let details = '';
+    const depth = step.depth || 0;
+    let details = '<div class="step-text" style="padding-left:' + (depth * 22) + 'px">';
     if (step.keyword) details += '<span class="step-keyword">' + escapeHtml(step.keyword) + '</span>';
     details += escapeHtml(step.text);
+    details += '</div>';
     if (step.errorMessage) {
       details += '<div class="step-error">' + escapeHtml(step.errorMessage) +
         (step.errorStack ? '\\n\\n' + escapeHtml(step.errorStack) : '') + '</div>';
     }
     if (step.screenshot) {
-      details += '<img class="step-screenshot" src="' + step.screenshot + '" alt="step screenshot">';
+      details += '<img class="step-screenshot' + (depth > 0 ? ' step-screenshot-sm' : '') +
+        '" style="margin-left:' + (depth * 22) + 'px" src="' + step.screenshot + '" alt="step screenshot">';
     }
     return '' +
-      '<tr>' +
+      '<tr class="' + (depth > 0 ? 'step-row-nested' : 'step-row-scenario') + '">' +
         '<td><span class="status-badge ' + step.status + '">' + step.status + '</span></td>' +
         '<td class="timestamp-cell">' + formatTime(step.timestamp) + '</td>' +
         '<td>' + details + '</td>' +
