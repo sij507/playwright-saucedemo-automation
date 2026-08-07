@@ -6,7 +6,7 @@ const { CheckoutStepOnePage } = require('../pages/CheckoutStepOnePage');
 const { CheckoutStepTwoPage } = require('../pages/CheckoutStepTwoPage');
 const { CheckoutCompletePage } = require('../pages/CheckoutCompletePage');
 const { users } = require('./testData');
-const { captureStep, resetStepCounter } = require('../utils/screenshotRecorder');
+const { captureStep, captureStepFailure } = require('../utils/screenshotRecorder');
 
 // Tracks the live `page` for whichever test is currently running, keyed by
 // testId, so the `expect` wrapper below can screenshot a verification step
@@ -23,18 +23,30 @@ const activePages = new Map();
 function withNavigationCapture(page) {
   const originalGoto = page.goto.bind(page);
   page.goto = async (...args) => {
-    const result = await originalGoto(...args);
     const description = page.__pendingStepDescription || `Navigate_${page.url()}`;
-    page.__pendingStepDescription = null;
-    await captureStep(page, description);
-    return result;
+    try {
+      const result = await originalGoto(...args);
+      page.__pendingStepDescription = null;
+      await captureStep(page, description);
+      return result;
+    } catch (error) {
+      page.__pendingStepDescription = null;
+      await captureStepFailure(page, description, error);
+      throw error;
+    }
   };
 
   const originalReload = page.reload.bind(page);
   page.reload = async (...args) => {
-    const result = await originalReload(...args);
-    await captureStep(page, `Reload_${page.url()}`);
-    return result;
+    const description = `Reload_${page.url()}`;
+    try {
+      const result = await originalReload(...args);
+      await captureStep(page, description);
+      return result;
+    } catch (error) {
+      await captureStepFailure(page, description, error);
+      throw error;
+    }
   };
 
   return page;
@@ -45,8 +57,13 @@ const test = base.test.extend({
     withNavigationCapture(page);
     activePages.set(testInfo.testId, page);
     await use(page);
-    activePages.delete(testInfo.testId);
-    resetStepCounter(testInfo.testId);
+    // Deliberately not cleaned up here: when a whole test times out mid-action,
+    // Playwright starts fixture teardown before that action's promise actually
+    // rejects — deleting these entries at that point raced with the pending
+    // captureStepFailure()/expect-wrapper call still using them, resetting the
+    // step counter back to 1 and re-printing the "[Test: ...]" header mid-test.
+    // testId is unique per test, so a fresh counter starts naturally anyway;
+    // leaving entries in place for a whole run is a trivial amount of memory.
   },
 
   loginPage: async ({ page }, use) => {
@@ -138,13 +155,14 @@ function wrapAssertion(assertion, subject) {
       if (typeof prop !== 'string' || typeof value !== 'function') return value;
 
       return async (...args) => {
+        const page = resolvePageForScreenshot(subject);
         try {
-          return await value.apply(target, args);
-        } finally {
-          const page = resolvePageForScreenshot(subject);
-          if (page) {
-            await captureStep(page, `Verify_${prop}`);
-          }
+          const result = await value.apply(target, args);
+          if (page) await captureStep(page, `Verify_${prop}`);
+          return result;
+        } catch (error) {
+          if (page) await captureStepFailure(page, `Verify_${prop}`, error);
+          throw error;
         }
       };
     },

@@ -12,17 +12,13 @@ class CheckoutStepOnePage extends BasePage {
   }
 
   async fillInfo({ firstName, lastName, postalCode }) {
-    await this.firstNameInput.fill(firstName);
-    await this.captureStep('EnterFirstName');
-    await this.lastNameInput.fill(lastName);
-    await this.captureStep('EnterLastName');
-    await this.postalCodeInput.fill(postalCode);
-    await this.captureStep('EnterPostalCode');
+    await this.perform(`Enter first name: ${firstName}`, () => this.firstNameInput.fill(firstName));
+    await this.perform(`Enter last name: ${lastName}`, () => this.lastNameInput.fill(lastName));
+    await this.perform(`Enter postal code: ${postalCode}`, () => this.postalCodeInput.fill(postalCode));
   }
 
   async continueToOverview() {
-    await this.continueButton.click();
-    await this.captureStep('ClickContinue');
+    await this.perform('Click Continue button', () => this.continueButton.click());
   }
 
   async getErrorMessage() {

@@ -15,7 +15,7 @@ class InventoryPage extends BasePage {
   }
 
   async goto() {
-    await this.gotoPath('/inventory.html', 'OpenInventoryPage');
+    await this.gotoPath('/inventory.html', 'Open inventory page');
   }
 
   itemCard(productName) {
@@ -23,13 +23,13 @@ class InventoryPage extends BasePage {
   }
 
   async addProductToCart(productName) {
-    await this.itemCard(productName).getByRole('button', { name: 'Add to cart' }).click();
-    await this.captureStep(`AddToCart_${productName}`);
+    await this.perform(`Add "${productName}" to cart`, () =>
+      this.itemCard(productName).getByRole('button', { name: 'Add to cart' }).click());
   }
 
   async removeProductFromCart(productName) {
-    await this.itemCard(productName).getByRole('button', { name: 'Remove' }).click();
-    await this.captureStep(`RemoveFromCart_${productName}`);
+    await this.perform(`Remove "${productName}" from cart`, () =>
+      this.itemCard(productName).getByRole('button', { name: 'Remove' }).click());
   }
 
   async getCartItemCount() {
@@ -38,8 +38,7 @@ class InventoryPage extends BasePage {
   }
 
   async sortBy(sortValue) {
-    await this.sortDropdown.selectOption(sortValue);
-    await this.captureStep(`SortProducts_${sortValue}`);
+    await this.perform(`Sort products by "${sortValue}"`, () => this.sortDropdown.selectOption(sortValue));
   }
 
   async getProductNames() {
@@ -52,15 +51,12 @@ class InventoryPage extends BasePage {
   }
 
   async openCart() {
-    await this.cartLink.click();
-    await this.captureStep('OpenCart');
+    await this.perform('Open cart', () => this.cartLink.click());
   }
 
   async logout() {
-    await this.burgerMenuButton.click();
-    await this.captureStep('OpenMenu');
-    await this.logoutLink.click();
-    await this.captureStep('ClickLogout');
+    await this.perform('Open menu', () => this.burgerMenuButton.click());
+    await this.perform('Click Logout', () => this.logoutLink.click());
   }
 }
 

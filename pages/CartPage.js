@@ -10,7 +10,7 @@ class CartPage extends BasePage {
   }
 
   async goto() {
-    await this.gotoPath('/cart.html', 'OpenCartPage');
+    await this.gotoPath('/cart.html', 'Open cart page');
   }
 
   cartItem(productName) {
@@ -18,8 +18,8 @@ class CartPage extends BasePage {
   }
 
   async removeItem(productName) {
-    await this.cartItem(productName).getByRole('button', { name: 'Remove' }).click();
-    await this.captureStep(`RemoveFromCart_${productName}`);
+    await this.perform(`Remove "${productName}" from cart`, () =>
+      this.cartItem(productName).getByRole('button', { name: 'Remove' }).click());
   }
 
   async getItemNames() {
@@ -31,8 +31,7 @@ class CartPage extends BasePage {
   }
 
   async checkout() {
-    await this.checkoutButton.click();
-    await this.captureStep('ClickCheckout');
+    await this.perform('Click Checkout button', () => this.checkoutButton.click());
   }
 }
 

@@ -22,8 +22,7 @@ class CheckoutStepTwoPage extends BasePage {
   }
 
   async finish() {
-    await this.finishButton.click();
-    await this.captureStep('ClickFinish');
+    await this.perform('Click Finish button', () => this.finishButton.click());
   }
 }
 
