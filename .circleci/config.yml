@@ -10,9 +10,14 @@ jobs:
         type: string
         default: "--project=chromium"
         description: "Playwright --project flag(s). Empty string runs every configured browser project."
+      parallelism:
+        type: integer
+        default: 1
+        description: "Number of parallel containers to shard this job's tests across."
     docker:
       - image: mcr.microsoft.com/playwright:v1.62.1-jammy
     resource_class: medium
+    parallelism: << parameters.parallelism >>
     steps:
       - checkout
       - restore_cache:
@@ -27,8 +32,11 @@ jobs:
           paths:
             - ~/.npm
       - run:
+          # CIRCLE_NODE_INDEX/CIRCLE_NODE_TOTAL are always set (0 and 1 when
+          # parallelism isn't overridden), so --shard is always 1/1 — i.e. a
+          # no-op — for jobs that don't opt into parallelism above.
           name: Run << parameters.tag >> tests
-          command: npx playwright test --grep "<< parameters.tag >>" << parameters.project_flag >>
+          command: npx playwright test --grep "<< parameters.tag >>" << parameters.project_flag >> --shard=$((CIRCLE_NODE_INDEX+1))/$CIRCLE_NODE_TOTAL
       - store_test_results:
           path: test-results
       - store_artifacts:
@@ -54,13 +62,18 @@ workflows:
 
   # Full cross-browser regression on any release branch (release or release/*).
   # One job per browser, run in parallel (no `requires` between them) instead
-  # of all three sequentially in a single container.
+  # of all three sequentially in a single container. Each browser's own tests
+  # are further split across 2 containers via CircleCI parallelism + Playwright
+  # --shard, so a single release-branch push spins up 6 containers total.
+  # Bump `parallelism` per job (independently, if one browser is slower) to
+  # trade more concurrent containers for a shorter wall-clock time.
   regression-on-release:
     jobs:
       - test:
           name: regression-chromium
           tag: "@regression"
           project_flag: "--project=chromium"
+          parallelism: 2
           filters:
             branches:
               only: /^release(\/.*)?$/
@@ -68,6 +81,7 @@ workflows:
           name: regression-firefox
           tag: "@regression"
           project_flag: "--project=firefox"
+          parallelism: 2
           filters:
             branches:
               only: /^release(\/.*)?$/
@@ -75,6 +89,7 @@ workflows:
           name: regression-webkit
           tag: "@regression"
           project_flag: "--project=webkit"
+          parallelism: 2
           filters:
             branches:
               only: /^release(\/.*)?$/

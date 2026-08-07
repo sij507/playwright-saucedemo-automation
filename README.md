@@ -174,6 +174,8 @@ Each workflow only fires on its own trigger — pushing to `main` runs smoke but
 
 `regression-on-release` runs its three browsers as three separate jobs in parallel (each its own container) rather than one job running all three browsers sequentially — same total test count, but wall-clock time is roughly the slowest single browser instead of the sum of all three. The trade-off: each browser now produces its own `extent-report/index.html` (see its Artifacts tab) instead of one report covering all three.
 
+Each of those three jobs is *also* split across 2 containers via CircleCI's `parallelism` plus Playwright's own `--shard` (`test-results`/`screenshots`/`extent-report` end up namespaced per container in the Artifacts tab) — so a single release-branch push runs 6 containers total. `parallelism` is a parameter on the shared `test` job (default `1`, a no-op — `--shard=1/1` just means "run everything"), so `smoke`/`critical` are unaffected; bump the `parallelism: 2` value on any of the three regression jobs in `.circleci/config.yml` independently to trade more concurrent containers for a shorter wall-clock time.
+
 Dependencies are installed with `npm ci` inside Microsoft's official `mcr.microsoft.com/playwright` Docker image (browsers pre-installed, matching the `@playwright/test` version pinned in `package.json`), and the npm cache is restored/saved between builds keyed on `package-lock.json`.
 
 To change the schedule or branch patterns, edit the `filters` and `cron` values in `.circleci/config.yml`.
