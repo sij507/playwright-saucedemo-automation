@@ -53,12 +53,28 @@ workflows:
               only: main
 
   # Full cross-browser regression on any release branch (release or release/*).
+  # One job per browser, run in parallel (no `requires` between them) instead
+  # of all three sequentially in a single container.
   regression-on-release:
     jobs:
       - test:
-          name: regression
+          name: regression-chromium
           tag: "@regression"
-          project_flag: ""
+          project_flag: "--project=chromium"
+          filters:
+            branches:
+              only: /^release(\/.*)?$/
+      - test:
+          name: regression-firefox
+          tag: "@regression"
+          project_flag: "--project=firefox"
+          filters:
+            branches:
+              only: /^release(\/.*)?$/
+      - test:
+          name: regression-webkit
+          tag: "@regression"
+          project_flag: "--project=webkit"
           filters:
             branches:
               only: /^release(\/.*)?$/
