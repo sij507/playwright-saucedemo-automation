@@ -57,11 +57,11 @@ screenshots/Login/Positive/LogsInWithValidCredentials/Login_02_EnterUsername.png
 screenshots/Login/Positive/LogsInWithValidCredentials/Login_05_VerifyToHaveURL.png
 ```
 
-Each one is also attached to the Playwright HTML report (see [Viewing Playwright reports](#viewing-playwright-reports)) — open any test in the report and its steps show inline, in order, whether the test passed or failed.
+These are separate from the `step` fixture's own screenshots below — this older, page-object-level mechanism still runs on every test, saving files to disk and to CI artifacts, but nothing renders them inline anymore now that the built-in Playwright HTML report has been removed (see [Viewing reports](#viewing-reports)).
 
 ### Extent-style HTML report
 
-A second, self-contained report — a single `extent-report/index.html` with no server required — is generated alongside the built-in Playwright HTML report on every run, including the CircleCI smoke/critical/regression jobs. It's built specifically around `test.step()`: a left sidebar lists every test (status icon, start time, duration), and selecting one shows a teal start / red end / duration badge row plus a STATUS | TIMESTAMP | DETAILS table, one row per step, each with its screenshot inlined. It supports search, a pass/fail/skipped filter, and a dark-mode toggle (persisted in `localStorage`).
+A self-contained report — a single `extent-report/index.html` with no server required — is generated on every run, including the CircleCI smoke/critical/regression jobs. It's built specifically around `test.step()`: a left sidebar lists every test (status icon, start time, duration), and selecting one shows a teal start / red end / duration badge row plus a STATUS | TIMESTAMP | DETAILS table, one row per step, each with its screenshot inlined. It supports search, a pass/fail/skipped filter, and a dark-mode toggle (persisted in `localStorage`).
 
 The entire suite (`login.spec.js`, `cart.spec.js`, `checkout.spec.js`, `sorting.spec.js`, `logout.spec.js`) is written with the `step` fixture, as Given/When/Then scenarios:
 
@@ -156,20 +156,20 @@ Each workflow only fires on its own trigger — pushing to `main` runs smoke but
 
 To change the schedule or branch patterns, edit the `filters` and `cron` values in `.circleci/config.yml`.
 
-## Viewing Playwright reports
+## Viewing reports
+
+There's no built-in Playwright HTML report in this project — `extent-report/index.html` (see [Extent-style HTML report](#extent-style-html-report)) is the primary way to review a run.
 
 **Locally**, after any test run:
 
 ```bash
-npx playwright show-report
+open extent-report/index.html   # macOS; on Linux/Windows just open the file in a browser
 ```
-
-This opens the HTML report (`playwright-report/`) — every test's **Test Steps** tab shows the per-step screenshots described above (for both passed and failed tests), and failed tests additionally get Playwright's own failure screenshot, trace, and video.
 
 **In CircleCI**, open a completed job and check the **Artifacts** tab:
 
-- `playwright-report/` — the HTML report (download and open `index.html`, or `npx playwright show-report <path>`)
-- `test-results/` — JUnit XML, plus per-failure screenshots, traces (`.zip`, open with `npx playwright show-trace <file>`), and videos
-- `screenshots/` — every per-step screenshot, organized by test, exactly as described in [Step screenshots](#step-screenshots)
+- `extent-report/` — download `index.html` and open it (self-contained, no server needed)
+- `test-results/` — JUnit XML, plus per-failure screenshots, traces (`.zip`, open with `npx playwright show-trace <file>`), and videos from Playwright's failure-capture settings in `playwright.config.js`
+- `screenshots/` — every per-step screenshot from the older page-object-level mechanism, organized by test, exactly as described in [Step screenshots](#step-screenshots)
 
 The **Tests** tab on the job also renders the JUnit results (`test-results/junit.xml`) inline.

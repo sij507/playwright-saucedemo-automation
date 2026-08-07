@@ -32,9 +32,6 @@ jobs:
       - store_test_results:
           path: test-results
       - store_artifacts:
-          path: playwright-report
-          destination: playwright-report
-      - store_artifacts:
           path: test-results
           destination: test-results
       - store_artifacts:
