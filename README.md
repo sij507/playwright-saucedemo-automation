@@ -9,8 +9,7 @@ Playwright/
 ├── .circleci/
 │   └── config.yml            # smoke / critical / regression CircleCI jobs
 ├── fixtures/
-│   ├── base.js                # custom test/expect with page-object fixtures, login helper, auto-screenshot wiring
-│   ├── extentStep.js          # adds the `step` fixture used by reporters/extent-reporter.js
+│   ├── base.js                # test/expect: page-object fixtures, login helper, `step` (BDD + screenshots), auto-screenshot wiring
 │   └── testData.js            # users, credentials, error messages, checkout data
 ├── pages/
 │   ├── BasePage.js            # shared navigation + captureStep() helper
@@ -24,12 +23,12 @@ Playwright/
 │   ├── extent-reporter.js     # custom Reporter -> extent-report/index.html
 │   └── extentReportHtml.js    # the report's inlined CSS/JS template
 ├── tests/
-│   ├── login.spec.js          # positive / negative / edge cases
+│   ├── login.spec.js          # positive / negative / edge cases, all as Given/When/Then steps
 │   ├── cart.spec.js
 │   ├── checkout.spec.js
 │   ├── sorting.spec.js
 │   ├── logout.spec.js
-│   └── extent-demo.spec.js    # example spec using the `step` fixture — see below
+│   └── extent-demo.spec.js    # minimal standalone example of the `step` fixture — see below
 ├── utils/
 │   └── screenshotRecorder.js  # captureStep(): saves + names + attaches a step screenshot
 ├── screenshots/                # generated per run, gitignored — see "Step screenshots" below
@@ -62,43 +61,38 @@ Each one is also attached to the Playwright HTML report (see [Viewing Playwright
 
 ### Extent-style HTML report
 
-A second, self-contained report — a single `extent-report/index.html` with no server required — is generated alongside the built-in Playwright HTML report. It's built specifically around `test.step()`: a left sidebar lists every test (status icon, start time, duration), and selecting one shows a teal start / red end / duration badge row plus a STATUS | TIMESTAMP | DETAILS table, one row per step, each with its screenshot inlined. It supports search, a pass/fail/skipped filter, and a dark-mode toggle (persisted in `localStorage`).
+A second, self-contained report — a single `extent-report/index.html` with no server required — is generated alongside the built-in Playwright HTML report on every run, including the CircleCI smoke/critical/regression jobs. It's built specifically around `test.step()`: a left sidebar lists every test (status icon, start time, duration), and selecting one shows a teal start / red end / duration badge row plus a STATUS | TIMESTAMP | DETAILS table, one row per step, each with its screenshot inlined. It supports search, a pass/fail/skipped filter, and a dark-mode toggle (persisted in `localStorage`).
 
-This only picks up tests written with `test.step()` — it reads Playwright's own step tree via a custom `Reporter` (`onStepBegin`/`onStepEnd`/...), so a spec that doesn't use `step()` still appears in the sidebar but with an empty step table. To use it in a spec:
+The entire suite (`login.spec.js`, `cart.spec.js`, `checkout.spec.js`, `sorting.spec.js`, `logout.spec.js`) is written with the `step` fixture, as Given/When/Then scenarios:
 
 ```js
-const { test } = require('../fixtures/extentStep');
-const { expect } = require('@playwright/test');
+const { test, expect } = require('../fixtures/base');
 
-test('logs in', async ({ page, step }) => {
+test('logs in with valid credentials', async ({ loginPage, page, step }) => {
   await step.given('the user is on the login page', async () => {
-    await page.goto('/');
+    await loginPage.goto();
   });
 
   await step.when('the user logs in with valid credentials', async () => {
-    await page.locator('#user-name').fill('standard_user');
-    await page.locator('#password').fill('secret_sauce');
-    await page.locator('#login-button').click();
+    await loginPage.login('standard_user', 'secret_sauce');
   });
 
-  await step.then('the products page is displayed', async () => {
+  await step.then('the user is redirected to the products page', async () => {
     await expect(page).toHaveURL(/inventory\.html/);
   });
 });
 ```
 
-`fixtures/extentStep.js` adds a `step` fixture on top of the project's existing fixtures (`fixtures/base.js` — same page objects, same `loginAsStandardUser`, all still available). `step(title, action)` wraps `test.step()` and takes a full-page screenshot when the step ends, pass or fail, attaching it via `testInfo.attach()` — specs never call `page.screenshot()`. `step.given` / `.when` / `.then` / `.and` / `.but` are sugar that just prefix the title with the matching keyword; the reporter detects that keyword to color-code the row (`Given`/`When`/`And`/`But` → **Info**, `Then` → **Pass**/**Fail** depending on outcome, any step in a skipped test → **Skip**). On failure, the step's error message and stack (ANSI codes stripped) render directly in the DETAILS cell beneath the screenshot — no extra wiring needed, since `test.step()` already records the thrown error.
+`fixtures/base.js`'s `step` fixture wraps `test.step()` and takes a full-page screenshot when the step ends, pass or fail, attaching it via `testInfo.attach()` — specs never call `page.screenshot()`. `step.given` / `.when` / `.then` / `.and` / `.but` are sugar that just prefix the title with the matching keyword; the reporter (`reporters/extent-reporter.js`, a custom `Reporter` reading Playwright's own step tree via `onStepBegin`/`onStepEnd`/...) detects that keyword to color-code the row (`Given`/`When`/`And`/`But` → **Info**, `Then` → **Pass**/**Fail** depending on outcome, any step in a skipped test → **Skip**). On failure, the step's error message and stack (ANSI codes stripped) render directly in the DETAILS cell beneath the screenshot — no extra wiring needed, since `test.step()` already records the thrown error. The shared `loginAsStandardUser` fixture also wraps its login flow in a `step.given(...)`, so every cart/checkout/sorting/logout test that depends on it gets that step for free instead of repeating it.
 
-See [tests/extent-demo.spec.js](tests/extent-demo.spec.js) for a complete runnable example:
+A spec that doesn't use `step()` still appears in the sidebar, just with an empty step table — see the minimal standalone example in [tests/extent-demo.spec.js](tests/extent-demo.spec.js):
 
 ```bash
 npx playwright test tests/extent-demo.spec.js
 open extent-report/index.html   # macOS; on Linux/Windows just open the file in a browser
 ```
 
-No server is needed — everything (CSS, JS, screenshots) is inlined into that one HTML file, so it opens directly from disk.
-
-It's deliberately untagged (no `@smoke`/`@critical`/`@regression`), so it never runs as part of the existing CI suites — it's a standalone demo of the `step` fixture, not part of the regression coverage.
+No server is needed — everything (CSS, JS, screenshots) is inlined into that one HTML file, so it opens directly from disk. That demo spec is deliberately untagged (no `@smoke`/`@critical`/`@regression`), so it never runs as part of the existing CI suites.
 
 ## Installation
 

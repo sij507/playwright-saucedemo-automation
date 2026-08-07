@@ -68,14 +68,46 @@ const test = base.test.extend({
     await use(new CheckoutCompletePage(page));
   },
 
-  // Logs in as standard_user before the test body runs. Depend on this
-  // fixture (instead of calling loginPage.login manually) to avoid
-  // duplicating the login flow across every cart/checkout/sort test.
-  loginAsStandardUser: async ({ page }, use) => {
+  // BDD-style step wrapper for the extent-report (reporters/extent-reporter.js):
+  // step(title, action) / step.given|when|then|and|but(title, action) wraps
+  // test.step() and attaches a full-page screenshot when the step ends, pass
+  // or fail, so specs never call page.screenshot() themselves.
+  step: async ({ page }, use, testInfo) => {
+    const runStep = (title, action) =>
+      test.step(title, async () => {
+        try {
+          await action();
+        } finally {
+          try {
+            const screenshot = await page.screenshot({ fullPage: true });
+            await testInfo.attach('screenshot', { body: screenshot, contentType: 'image/png' });
+          } catch {
+            // Page may already be closed/navigating away; the step's own
+            // pass/fail state still gets reported without a screenshot.
+          }
+        }
+      });
+
+    const step = (title, action) => runStep(title, action);
+    step.given = (title, action) => runStep(`Given ${title}`, action);
+    step.when = (title, action) => runStep(`When ${title}`, action);
+    step.then = (title, action) => runStep(`Then ${title}`, action);
+    step.and = (title, action) => runStep(`And ${title}`, action);
+    step.but = (title, action) => runStep(`But ${title}`, action);
+
+    await use(step);
+  },
+
+  // Logs in as standard_user before the test body runs, wrapped as a single
+  // "Given" step so it shows up in the extent-report for every test that
+  // depends on this fixture instead of repeating the login flow everywhere.
+  loginAsStandardUser: async ({ page, step }, use) => {
     const loginPage = new LoginPage(page);
-    await loginPage.goto();
-    await loginPage.login(users.standard.username, users.standard.password);
-    await base.expect(page).toHaveURL(/inventory\.html/);
+    await step.given('the user is logged in as standard_user', async () => {
+      await loginPage.goto();
+      await loginPage.login(users.standard.username, users.standard.password);
+      await base.expect(page).toHaveURL(/inventory\.html/);
+    });
     await use();
   },
 });

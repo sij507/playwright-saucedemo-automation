@@ -1,10 +1,11 @@
-// Demonstrates the extent-report pipeline: fixtures/extentStep.js's `step`
-// fixture wraps test.step() and attaches a screenshot when each step ends
-// (pass or fail); reporters/extent-reporter.js turns those steps into the
-// extent-report/index.html dashboard. Not tagged @smoke/@critical/@regression
-// on purpose, so it stays out of the existing CI suites — run it directly:
+// Minimal demonstration of the extent-report pipeline: fixtures/base.js's
+// `step` fixture wraps test.step() and attaches a screenshot when each step
+// ends (pass or fail); reporters/extent-reporter.js turns those steps into
+// the extent-report/index.html dashboard. The real suite (tests/login.spec.js
+// etc.) uses the same fixture. Not tagged @smoke/@critical/@regression on
+// purpose, so it stays out of the existing CI suites — run it directly:
 //   npx playwright test tests/extent-demo.spec.js
-const { test } = require('../fixtures/extentStep');
+const { test } = require('../fixtures/base');
 const { expect } = require('@playwright/test');
 
 test.describe('Extent report demo', () => {
