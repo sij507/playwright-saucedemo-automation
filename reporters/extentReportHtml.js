@@ -261,6 +261,19 @@ tr.step-row-scenario .step-text { font-weight: 700; }
 tr.step-row-nested { background: var(--bg); }
 tr.step-row-nested .step-text { color: var(--muted); }
 tr.step-row-nested .status-badge { font-size: 10px; padding: 2px 8px; }
+tr.step-row-scenario { cursor: pointer; user-select: none; }
+tr.step-row-scenario:hover { background: var(--row-hover); }
+.step-toggle-icon {
+  display: inline-block;
+  width: 10px;
+  margin-right: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+  transform: rotate(90deg);
+}
+tr.step-row-scenario.collapsed .step-toggle-icon { transform: rotate(0deg); }
+tr.step-row-nested.step-row-hidden { display: none; }
 .screenshot-overlay {
   position: fixed;
   inset: 0;
@@ -360,6 +373,7 @@ const JS = `
   function stepRow(step) {
     const depth = step.depth || 0;
     let details = '<div class="step-text" style="padding-left:' + (depth * 22) + 'px">';
+    if (depth === 0) details += '<span class="step-toggle-icon">&#9654;</span>';
     if (step.keyword) details += '<span class="step-keyword">' + escapeHtml(step.keyword) + '</span>';
     details += escapeHtml(step.text);
     details += '</div>';
@@ -371,8 +385,13 @@ const JS = `
       details += '<img class="step-screenshot' + (depth > 0 ? ' step-screenshot-sm' : '') +
         '" style="margin-left:' + (depth * 22) + 'px" src="' + step.screenshot + '" alt="step screenshot">';
     }
+    // Collapsed by default: scenario rows start with "collapsed" (chevron
+    // pointing right, matching the click handler's toggled-off state), and
+    // their action rows start hidden. The click handler in selectTest()
+    // toggles both classes off together on first click.
+    const rowClass = depth > 0 ? 'step-row-nested step-row-hidden' : 'step-row-scenario collapsed';
     return '' +
-      '<tr class="' + (depth > 0 ? 'step-row-nested' : 'step-row-scenario') + '">' +
+      '<tr class="' + rowClass + '">' +
         '<td><span class="status-badge ' + step.status + '">' + step.status + '</span></td>' +
         '<td class="timestamp-cell">' + formatTime(step.timestamp) + '</td>' +
         '<td>' + details + '</td>' +
@@ -404,7 +423,21 @@ const JS = `
       '</table>';
 
     detail.querySelectorAll('.step-screenshot').forEach(function (img) {
-      img.addEventListener('click', function () { openLightbox(img.src); });
+      img.addEventListener('click', function (e) {
+        e.stopPropagation(); // don't also toggle the step row underneath
+        openLightbox(img.src);
+      });
+    });
+
+    detail.querySelectorAll('tr.step-row-scenario').forEach(function (row) {
+      row.addEventListener('click', function () {
+        const collapsed = row.classList.toggle('collapsed');
+        let sib = row.nextElementSibling;
+        while (sib && sib.classList.contains('step-row-nested')) {
+          sib.classList.toggle('step-row-hidden', collapsed);
+          sib = sib.nextElementSibling;
+        }
+      });
     });
   }
 
