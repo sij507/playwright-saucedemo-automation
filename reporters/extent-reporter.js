@@ -81,6 +81,38 @@ function fillOrphanedScreenshots(row, resultAttachments) {
   }
 }
 
+// When an action throws, Playwright doesn't just record the error on that
+// action's own TestStep — the exception also propagates through every
+// ancestor test.step() callback, so each ancestor's TestStep ends up with
+// the *same* .error too. Without this, a failed "Then ..." row and the
+// "Verify_toHaveText" action row nested under it would both show the
+// identical error message/stack. Walk the (already depth-ordered) row list
+// and clear a row's error text only when a descendant of its own already
+// carries an error — i.e. only when the failure is genuinely duplicated,
+// not just because that row happens to have children. A row whose failure
+// isn't echoed by any child (e.g. a step that throws directly, with no
+// nested perform()/expect call) keeps its own error text, so nothing is
+// ever silently lost. Status ('fail') is untouched — only the error
+// message/stack text is deduplicated.
+function suppressDuplicateAncestorErrors(steps) {
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (!step.errorMessage) continue;
+
+    let descendantHasError = false;
+    for (let j = i + 1; j < steps.length && steps[j].depth > step.depth; j++) {
+      if (steps[j].errorMessage) {
+        descendantHasError = true;
+        break;
+      }
+    }
+    if (descendantHasError) {
+      step.errorMessage = null;
+      step.errorStack = null;
+    }
+  }
+}
+
 // Given/When/And/But describe setup or an action and aren't themselves a
 // verification, so they're "info" unless they threw; "Then" steps and
 // assertion steps (fixtures/base.js always names these "Verify_<matcher>")
@@ -192,6 +224,7 @@ class ExtentReporter {
     if (!row) return;
 
     fillOrphanedScreenshots(row, result.attachments);
+    suppressDuplicateAncestorErrors(row.steps);
 
     row.status = testStatus(result.status);
     row.startTime = result.startTime.getTime();
