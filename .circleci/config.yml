@@ -43,9 +43,6 @@ jobs:
           path: test-results
           destination: test-results
       - store_artifacts:
-          path: screenshots
-          destination: screenshots
-      - store_artifacts:
           path: extent-report
           destination: extent-report
 

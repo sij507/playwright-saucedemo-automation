@@ -30,9 +30,8 @@ Playwright/
 │   ├── logout.spec.js
 │   └── extent-demo.spec.js    # minimal standalone example of the `step` fixture — see below
 ├── utils/
-│   ├── screenshotRecorder.js  # captureStep()/captureStepFailure(): screenshot + console log for a step
+│   ├── screenshotRecorder.js  # captureStep()/captureStepFailure(): the action-level console log (no screenshot)
 │   └── stepLogger.js          # logStep(): the "[Test: ...] STEP N - ... - PASS/FAIL" console lines
-├── screenshots/                # generated per run, gitignored — see "Step screenshots" below
 ├── extent-report/              # generated per run, gitignored — see "Extent-style HTML report" below
 ├── playwright.config.js
 └── package.json
@@ -42,13 +41,13 @@ Each page in `pages/` exposes only locators and user actions for that page — t
 
 ### Step logging & screenshots
 
-Every navigation, user action, and assertion is logged to the console **and** screenshotted automatically — no test ever calls `console.log()` or `page.screenshot()` itself:
+Every navigation, user action, and assertion is logged to the console automatically — no test ever calls `console.log()` itself. These are **action-level** logs (text only, no screenshot); the BDD **step** they run inside (see [Extent-style HTML report](#extent-style-html-report) below) is what carries a screenshot:
 
 - Each `pages/*.js` method wraps its action in `this.perform('Description', () => ...)` (from `BasePage`) instead of calling `.click()`/`.fill()`/`.selectOption()` directly (e.g. `LoginPage.login()` performs `Enter username: <value>`, `Enter password`, `Click Login button`).
 - `fixtures/base.js` wraps the shared `expect` export so every matcher (`toHaveText`, `toBeVisible`, `toHaveURL`, ...) is logged right after it settles — pass or fail.
 - `fixtures/base.js` also wraps `page.goto()`/`page.reload()` on the `page` fixture itself, so the rare test that calls them directly (e.g. the direct-URL-without-login and refresh-mid-checkout tests) is still covered.
 
-`perform()` (and the `expect`/navigation wrappers) always do the same three things: increment that test's step counter, save a screenshot, and print a console line — on success **or** failure, via `utils/screenshotRecorder.js`'s `captureStep`/`captureStepFailure`. Adding a new test or page-object method needs no extra wiring — as long as the action goes through a page object (or `page.goto`/`reload`/`expect`), it's logged and screenshotted for free.
+`perform()` (and the `expect`/navigation wrappers) increment that test's step counter and print a console line — on success **or** failure, via `utils/screenshotRecorder.js`'s `captureStep`/`captureStepFailure`. Adding a new test or page-object method needs no extra wiring — as long as the action goes through a page object (or `page.goto`/`reload`/`expect`), it's logged for free.
 
 **Console output** (via `utils/stepLogger.js`, also visible in CircleCI's job output — no extra CI wiring needed since it's just stdout from the `npx playwright test` command):
 
@@ -65,19 +64,9 @@ A failed step prints `- FAIL` plus the error message on the next line, e.g. `STE
 
 With multiple parallel workers (the local default), several tests' lines interleave in the terminal since each worker prints independently — use `npx playwright test --workers=1` for a clean, sequential trace. **CircleCI already runs with `workers: 1`** (see `playwright.config.js`), so job output there is naturally sequential, one test's full step log after another.
 
-**Screenshots** are written to `screenshots/<TestFileName>/<Describe>/.../<TestTitle>/<TestFileName>_<NN>_<Step>.png`, e.g.:
-
-```
-screenshots/Login/Positive/LogsInWithValidCredentials/Login_01_OpenSauceDemoLoginPage.png
-screenshots/Login/Positive/LogsInWithValidCredentials/Login_02_EnterUsernameStandardUser.png
-screenshots/Login/Positive/LogsInWithValidCredentials/Login_05_VerifyToHaveURL.png
-```
-
-These are separate from the `step` fixture's own screenshots below — this page-object-level mechanism still runs on every test, saving files to disk and to CI artifacts, but nothing renders them inline anymore now that the built-in Playwright HTML report has been removed (see [Viewing reports](#viewing-reports)).
-
 ### Extent-style HTML report
 
-A self-contained report — a single `extent-report/index.html` with no server required — is generated on every run, including the CircleCI smoke/critical/regression jobs. It's built specifically around `test.step()`: a left sidebar lists every test (status icon, start time, duration), and selecting one shows a teal start / red end / duration badge row plus a STATUS | TIMESTAMP | DETAILS table, one row per step, each with its screenshot inlined. It supports search, a pass/fail/skipped filter, and a dark-mode toggle (persisted in `localStorage`).
+A self-contained report — a single `extent-report/index.html` with no server required — is generated on every run, including the CircleCI smoke/critical/regression jobs. It's built specifically around `test.step()`: a left sidebar lists every test (status icon, start time, duration), and selecting one shows a teal start / red end / duration badge row plus a STATUS | TIMESTAMP | DETAILS table, one row per step and per action inside it — BDD steps (bold rows) each carry a screenshot of their end state; the action rows nested under them are text-only (name, status, error) with no screenshot of their own. It supports search, a pass/fail/skipped filter, and a dark-mode toggle (persisted in `localStorage`).
 
 The entire suite (`login.spec.js`, `cart.spec.js`, `checkout.spec.js`, `sorting.spec.js`, `logout.spec.js`) is written with the `step` fixture, as Given/When/Then scenarios:
 
@@ -196,6 +185,5 @@ The `[Test: ...] STEP N - ... - PASS/FAIL` lines described above print straight 
 
 - `extent-report/` — download `index.html` and open it (self-contained, no server needed)
 - `test-results/` — JUnit XML, plus per-failure screenshots, traces (`.zip`, open with `npx playwright show-trace <file>`), and videos from Playwright's failure-capture settings in `playwright.config.js`
-- `screenshots/` — every per-step screenshot from the page-object-level mechanism, organized by test, exactly as described in [Step logging & screenshots](#step-logging--screenshots)
 
 The **Tests** tab on the job also renders the JUnit results (`test-results/junit.xml`) inline.
