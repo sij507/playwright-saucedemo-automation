@@ -1,5 +1,6 @@
 const { test } = require('@playwright/test');
 const { captureStep, captureStepFailure, truncate } = require('../utils/screenshotRecorder');
+const { sanitize } = require('../utils/sanitize');
 
 class BasePage {
   constructor(page) {
@@ -38,7 +39,7 @@ class BasePage {
     // into `description` (e.g. "Enter username: <value>"), and an untruncated
     // step title would otherwise mismatch the truncated filename/attachment
     // name captureStep produces.
-    const safeDescription = truncate(description);
+    const safeDescription = truncate(sanitize(description));
     return test.step(safeDescription, async () => {
       try {
         const result = await actionFn();

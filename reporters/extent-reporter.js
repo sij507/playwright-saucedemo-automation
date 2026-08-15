@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { renderReportHtml } = require('./extentReportHtml');
 const { humanize } = require('../utils/stepLogger');
+const { sanitize } = require('../utils/sanitize');
 
 const BDD_KEYWORD_RE = /^(Given|When|Then|And|But)\b\s*/;
 
@@ -35,6 +36,25 @@ function directAttachments(step) {
     if (child.category === 'test.attach' && child.attachments) acc.push(...child.attachments);
   }
   return acc;
+}
+
+// The wrapped `expect` (fixtures/base.js) can't rewrite a step's title after
+// the fact — test.step()'s title is fixed at creation, before pass/fail is
+// known — so on failure it ships the richer "FAILED — Expected: X, Actual:
+// Y" text as a 'failure-summary' text attachment instead. When present, this
+// is what the report displays in place of the plain pass-style title.
+function findFailureSummary(step) {
+  const attachment = directAttachments(step).find((a) => a.name === 'failure-summary');
+  if (!attachment) return null;
+  if (attachment.body) return attachment.body.toString('utf-8');
+  if (attachment.path) {
+    try {
+      return fs.readFileSync(attachment.path, 'utf-8');
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function imageToDataUri(image) {
@@ -115,7 +135,7 @@ function suppressDuplicateAncestorErrors(steps) {
 
 // Given/When/And/But describe setup or an action and aren't themselves a
 // verification, so they're "info" unless they threw; "Then" steps and
-// assertion steps (fixtures/base.js always names these "Verify_<matcher>")
+// assertion steps (fixtures/base.js always names these "Assert <label>...")
 // are treated as verifications, so a passing one is reported as "pass".
 // Note: TestResult.status stays 'skipped' (its unset placeholder) for the
 // entire test run and is only finalized once the test completes — so a step
@@ -124,7 +144,7 @@ function suppressDuplicateAncestorErrors(steps) {
 function stepStatus(step) {
   if (step.error) return 'fail';
   const { keyword, text } = splitBddKeyword(step.title);
-  if (keyword === 'Then' || /^Verify/i.test(text)) return 'pass';
+  if (keyword === 'Then' || /^Assert/i.test(text)) return 'pass';
   return 'info';
 }
 
@@ -154,17 +174,22 @@ function stepDepth(step) {
 // *started*, not completed — sidesteps the tie entirely.
 function collectStepRows(step, depth, acc) {
   const { keyword, text } = splitBddKeyword(step.title);
+  // On failure, an assertion step carries a richer "FAILED — Expected: X,
+  // Actual: Y" summary as an attachment (see findFailureSummary) — shown in
+  // place of the plain pass-style title so the failure detail stays on this
+  // row only, never duplicated on the parent step/test.
+  const failureSummary = step.error ? findFailureSummary(step) : null;
   acc.push({
     title: step.title,
     keyword,
-    text: humanize(text),
+    text: failureSummary || humanize(text),
     depth,
     status: stepStatus(step),
     timestamp: step.startTime.getTime(),
     durationMs: step.duration,
     screenshot: extractScreenshot(step),
-    errorMessage: step.error && step.error.message ? stripAnsi(step.error.message) : null,
-    errorStack: step.error && step.error.stack ? stripAnsi(step.error.stack) : null,
+    errorMessage: step.error && step.error.message ? sanitize(stripAnsi(step.error.message)) : null,
+    errorStack: step.error && step.error.stack ? sanitize(stripAnsi(step.error.stack)) : null,
   });
   for (const child of step.steps || []) {
     if (child.category === 'test.step') collectStepRows(child, depth + 1, acc);

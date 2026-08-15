@@ -31,7 +31,9 @@ Playwright/
 │   └── extent-demo.spec.js    # minimal standalone example of the `step` fixture — see below
 ├── utils/
 │   ├── screenshotRecorder.js  # captureStep()/captureStepFailure(): the action-level console log (no screenshot)
-│   └── stepLogger.js          # logStep(): the "[Test: ...] STEP N - ... - PASS/FAIL" console lines
+│   ├── stepLogger.js          # logStep(): the "[Test: ...] STEP N - ... - PASS/FAIL" console lines
+│   ├── assertionText.js       # describeAssertion()/buildFailureSummary(): matcher-aware "Assert <label>: <value>" / "FAILED — Expected: X, Actual: Y" text
+│   └── sanitize.js            # sanitize(): masks password/token/secret/api-key/authorization values before they reach the report, console, or CI logs
 ├── extent-report/              # generated per run, gitignored — see "Extent-style HTML report" below
 ├── playwright.config.js
 └── package.json
@@ -43,11 +45,13 @@ Each page in `pages/` exposes only locators and user actions for that page — t
 
 Every navigation, user action, and assertion is logged to the console automatically — no test ever calls `console.log()` itself. These are **action-level** logs (text only, no screenshot); the BDD **step** they run inside (see [Extent-style HTML report](#extent-style-html-report) below) is what carries a screenshot:
 
-- Each `pages/*.js` method wraps its action in `this.perform('Description', () => ...)` (from `BasePage`) instead of calling `.click()`/`.fill()`/`.selectOption()` directly (e.g. `LoginPage.login()` performs `Enter username: <value>`, `Enter password`, `Click Login button`).
-- `fixtures/base.js` wraps the shared `expect` export so every matcher (`toHaveText`, `toBeVisible`, `toHaveURL`, ...) is logged right after it settles — pass or fail.
+- Each `pages/*.js` method wraps its action in `this.perform('Description', () => ...)` (from `BasePage`) instead of calling `.click()`/`.fill()`/`.selectOption()` directly, and the description always includes the value involved — e.g. `LoginPage.login()` performs `Enter username: standard_user`, `Enter password: ********`, `Click Login button`.
+- `fixtures/base.js` wraps the shared `expect` export so every matcher (`toHaveText`, `toBeVisible`, `toHaveURL`, ...) is logged right after it settles — pass or fail. The description is built from the matcher and the locator/value being checked (`utils/assertionText.js`), e.g. `Assert .title text: Products` or `Assert page URL contains: /inventory\.html/`, so the log reads like a spec without needing the test source open.
 - `fixtures/base.js` also wraps `page.goto()`/`page.reload()` on the `page` fixture itself, so the rare test that calls them directly (e.g. the direct-URL-without-login and refresh-mid-checkout tests) is still covered.
 
 `perform()` (and the `expect`/navigation wrappers) increment that test's step counter and print a console line — on success **or** failure, via `utils/screenshotRecorder.js`'s `captureStep`/`captureStepFailure`. Adding a new test or page-object method needs no extra wiring — as long as the action goes through a page object (or `page.goto`/`reload`/`expect`), it's logged for free.
+
+Every description funnels through `utils/sanitize.js` before it's used anywhere — report, console, or CircleCI logs — so a `password:`/`token:`/`secret:`/`api key:`/`authorization:` label always masks its value as `********`, even if a page object embeds the raw value when building the description.
 
 **Console output** (via `utils/stepLogger.js`, also visible in CircleCI's job output — no extra CI wiring needed since it's just stdout from the `npx playwright test` command):
 
@@ -55,12 +59,12 @@ Every navigation, user action, and assertion is logged to the console automatica
 [Test: logs in with valid credentials]
 [10:32:01] STEP 1 - Open SauceDemo login page - PASS
 [10:32:03] STEP 2 - Enter username: standard_user - PASS
-[10:32:04] STEP 3 - Enter password - PASS
+[10:32:04] STEP 3 - Enter password: ******** - PASS
 [10:32:05] STEP 4 - Click Login button - PASS
-[10:32:05] STEP 5 - Verify to Have URL - PASS
+[10:32:05] STEP 5 - Assert page URL contains: /inventory\.html/ - PASS
 ```
 
-A failed step prints `- FAIL` plus the error message on the next line, e.g. `STEP 6 - Verify to Have Text - FAIL` followed by `↳ expect(locator).toHaveText(...) failed ...`. Playwright's own `trace: retain-on-failure` / `video: retain-on-failure` settings in `playwright.config.js` still capture a trace and video for the failing test on top of that.
+A failed step prints `- FAIL` plus the error message on the next line, e.g. `STEP 6 - Assert .title text: Products - FAIL` followed by `↳ expect(locator).toHaveText(...) failed ...`. Playwright's own `trace: retain-on-failure` / `video: retain-on-failure` settings in `playwright.config.js` still capture a trace and video for the failing test on top of that.
 
 With multiple parallel workers (the local default), several tests' lines interleave in the terminal since each worker prints independently — use `npx playwright test --workers=1` for a clean, sequential trace. **CircleCI already runs with `workers: 1`** (see `playwright.config.js`), so job output there is naturally sequential, one test's full step log after another.
 
@@ -90,7 +94,9 @@ test('logs in with valid credentials', async ({ loginPage, page, step }) => {
 
 `fixtures/base.js`'s `step` fixture wraps `test.step()` and takes a full-page screenshot when the step ends, pass or fail, attaching it via `testInfo.attach()` — specs never call `page.screenshot()`. `step.given` / `.when` / `.then` / `.and` / `.but` are sugar that just prefix the title with the matching keyword; the reporter (`reporters/extent-reporter.js`, a custom `Reporter` reading Playwright's own step tree via `onStepBegin`/`onStepEnd`/...) detects that keyword to color-code the row (`Given`/`When`/`And`/`But` → **Info**, `Then` → **Pass**/**Fail** depending on outcome, any step in a skipped test → **Skip**). On failure, the step's error message and stack (ANSI codes stripped) render directly in the DETAILS cell beneath the screenshot — no extra wiring needed, since `test.step()` already records the thrown error. The shared `loginAsStandardUser` fixture also wraps its login flow in a `step.given(...)`, so every cart/checkout/sorting/logout test that depends on it gets that step for free instead of repeating it.
 
-Every granular action also shows up as its own indented sub-row nested under the Given/When/Then step it ran inside — not just the BDD-level steps. `BasePage.perform()` (used by every `pages/*.js` method), the `page.goto()`/`page.reload()` wrappers, and the wrapped `expect` (see [Step logging & screenshots](#step-logging--screenshots)) all wrap their work in `test.step()` too, so the reporter's step tree — and therefore the report — includes both levels: a bold "When the user logs in with valid credentials" row, followed by its own smaller, indented "Enter username: standard_user" / "Enter password" / "Click Login button" rows, each with its own screenshot. A verification action nested this way (`Verify_toHaveURL`, etc.) is colored **Pass**/**Fail** like a `Then` step, since it's a verification regardless of which BDD keyword it's nested under.
+Every granular action also shows up as its own indented sub-row nested under the Given/When/Then step it ran inside — not just the BDD-level steps. `BasePage.perform()` (used by every `pages/*.js` method), the `page.goto()`/`page.reload()` wrappers, and the wrapped `expect` (see [Step logging & screenshots](#step-logging--screenshots)) all wrap their work in `test.step()` too, so the reporter's step tree — and therefore the report — includes both levels: a bold "When the user logs in with valid credentials" row, followed by its own smaller, indented "Enter username: standard_user" / "Enter password: ********" / "Click Login button" rows. A verification action nested this way (`Assert page URL contains: ...`, etc.) is colored **Pass**/**Fail** like a `Then` step, since it's a verification regardless of which BDD keyword it's nested under.
+
+A passing assertion row stays concise — just the value that was checked (`Assert .title text: Products`) — since expected and actual are identical on a pass and showing both would be redundant. A failing assertion row instead shows `Assert <what> FAILED — Expected: <expected>, Actual: <actual>` (or `Expected to contain: ...` for a `toHaveURL` regex/contains-style check), with the full error message and stack still available beneath it — and only beneath it. `test.step()` fixes a step's title before its outcome is known, so this richer failure text is shipped to the reporter as a small `failure-summary` attachment on the assertion's own step (`utils/assertionText.js` builds it, `reporters/extent-reporter.js`'s `findFailureSummary()` reads it) rather than trying to rewrite the title after the fact — and because it's attached only to the leaf assertion step, the parent `Then`/`When` row never repeats it — same principle as the reporter's existing ancestor-error de-duplication (`suppressDuplicateAncestorErrors` in `reporters/extent-reporter.js`), which keeps the raw error message/stack from appearing on both a step and the action nested under it.
 
 A spec that doesn't use `step()` still appears in the sidebar, just with an empty step table — see the minimal standalone example in [tests/extent-demo.spec.js](tests/extent-demo.spec.js):
 

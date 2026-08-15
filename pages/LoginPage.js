@@ -16,7 +16,7 @@ class LoginPage extends BasePage {
 
   async login(username, password) {
     await this.perform(`Enter username: ${username}`, () => this.usernameInput.fill(username));
-    await this.perform('Enter password', () => this.passwordInput.fill(password));
+    await this.perform(`Enter password: ${password}`, () => this.passwordInput.fill(password));
     await this.perform('Click Login button', () => this.loginButton.click());
   }
 

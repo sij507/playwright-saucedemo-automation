@@ -7,6 +7,8 @@ const { CheckoutStepTwoPage } = require('../pages/CheckoutStepTwoPage');
 const { CheckoutCompletePage } = require('../pages/CheckoutCompletePage');
 const { users } = require('./testData');
 const { captureStep, captureStepFailure } = require('../utils/screenshotRecorder');
+const { describeAssertion, buildFailureSummary } = require('../utils/assertionText');
+const { sanitize } = require('../utils/sanitize');
 
 // Tracks the live `page` for whichever test is currently running, keyed by
 // testId, so the `expect` wrapper below can screenshot a verification step
@@ -23,7 +25,7 @@ const activePages = new Map();
 function withNavigationCapture(page) {
   const originalGoto = page.goto.bind(page);
   page.goto = async (...args) => {
-    const description = page.__pendingStepDescription || `Navigate_${page.url()}`;
+    const description = sanitize(page.__pendingStepDescription || `Navigate_${page.url()}`);
     return test.step(description, async () => {
       try {
         const result = await originalGoto(...args);
@@ -40,7 +42,7 @@ function withNavigationCapture(page) {
 
   const originalReload = page.reload.bind(page);
   page.reload = async (...args) => {
-    const description = `Reload_${page.url()}`;
+    const description = sanitize(`Reload_${page.url()}`);
     return test.step(description, async () => {
       try {
         const result = await originalReload(...args);
@@ -151,23 +153,44 @@ function resolvePageForScreenshot(subject) {
 // Wraps every matcher call (toHaveText, toBeVisible, toHaveURL, ...) so a
 // verification screenshot is captured automatically after each assertion —
 // tests only ever import `expect` from here and never call page.screenshot().
-function wrapAssertion(assertion, subject) {
+//
+// The step's title (and therefore what the report displays) is built once,
+// up front, from the matcher name + args (describeAssertion) — a concise
+// "Assert <label>: <value>" line, since a pass needs nothing more than the
+// value that was checked. test.step()'s title can't be changed after the
+// fact, so on failure the richer "FAILED — Expected: X, Actual: Y" text is
+// shipped separately via a 'failure-summary' attachment for the reporter to
+// read (see reporters/extent-reporter.js) rather than trying to rewrite the
+// title.
+function wrapAssertion(assertion, subject, negated = false) {
   return new Proxy(assertion, {
     get(target, prop) {
       const value = target[prop];
-      if (prop === 'not') return wrapAssertion(value, subject);
+      if (prop === 'not') return wrapAssertion(value, subject, !negated);
       if (typeof prop !== 'string' || typeof value !== 'function') return value;
 
       return async (...args) => {
         const page = resolvePageForScreenshot(subject);
-        const description = `Verify_${prop}`;
+        const description = sanitize(describeAssertion(prop, args, subject, negated));
         return test.step(description, async () => {
           try {
             const result = await value.apply(target, args);
             if (page) await captureStep(page, description);
             return result;
           } catch (error) {
-            if (page) await captureStepFailure(page, description, error);
+            const failureSummary = sanitize(buildFailureSummary(prop, args, subject, error, negated));
+            if (page) {
+              await captureStepFailure(page, failureSummary || description, error);
+              try {
+                await test.info().attach('failure-summary', {
+                  body: Buffer.from(failureSummary || description),
+                  contentType: 'text/plain',
+                });
+              } catch {
+                // Best-effort: if the test is already tearing down, the
+                // report simply falls back to the plain description.
+              }
+            }
             throw error;
           }
         });

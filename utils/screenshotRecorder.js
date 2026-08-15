@@ -1,5 +1,6 @@
 const { test } = require('@playwright/test');
 const { logStep } = require('./stepLogger');
+const { sanitize } = require('./sanitize');
 
 // testId -> next step number. Deliberately never cleared: testId is unique
 // per test, so a new test always starts at a fresh (unset) counter anyway,
@@ -57,7 +58,7 @@ async function captureStepFailure(page, description, error) {
     stepNumber,
     description: safeDescription,
     status: 'FAIL',
-    error: error && error.message ? error.message : String(error),
+    error: sanitize(error && error.message ? error.message : String(error)),
   });
 }
 
