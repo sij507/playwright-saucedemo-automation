@@ -102,8 +102,14 @@ const test = base.test.extend({
           await action();
         } finally {
           try {
-            const screenshot = await page.screenshot({ fullPage: true });
-            await testInfo.attach('screenshot', { body: screenshot, contentType: 'image/png' });
+            // JPEG at quality 40 instead of lossless PNG: every BDD step
+            // (not just failures) embeds its own full-page screenshot as
+            // base64, so even a modest regression suite balloons the
+            // self-contained report to tens of MB as PNG. Quality 40 stays
+            // clearly legible at the report's display size while cutting
+            // file size substantially.
+            const screenshot = await page.screenshot({ fullPage: true, type: 'jpeg', quality: 40 });
+            await testInfo.attach('screenshot', { body: screenshot, contentType: 'image/jpeg' });
           } catch {
             // Page may already be closed/navigating away; the step's own
             // pass/fail state still gets reported without a screenshot.
