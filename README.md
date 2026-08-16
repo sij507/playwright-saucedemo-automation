@@ -193,3 +193,19 @@ The `[Test: ...] STEP N - ... - PASS/FAIL` lines described above print straight 
 - `test-results/` — JUnit XML, plus per-failure screenshots, traces (`.zip`, open with `npx playwright show-trace <file>`), and videos from Playwright's failure-capture settings in `playwright.config.js`
 
 The **Tests** tab on the job also renders the JUnit results (`test-results/junit.xml`) inline.
+
+### Viewing a trace
+
+A trace is Playwright's full recording of a failed test run: DOM snapshots before and after every action, network requests, console logs, and a screenshot-by-screenshot timeline, all bundled into one `trace.zip`. It's the deepest debugging tool Playwright has — rather than a single end-state screenshot, you can scrub through exactly what the page looked like at each step, inspect any request/response, and see the DOM at that exact moment. `playwright.config.js` sets `trace: 'retain-on-failure'`, so a trace is only captured for tests that actually fail — a passing test has nothing to open.
+
+Three ways to open one:
+
+- **From the extent report** (easiest): open `extent-report/index.html`, select a failed test, and click the 🔍 **trace** link in its Artifacts row (alongside links to that test's screenshot, video, and error context). This only works when the report is opened from its own `extent-report/` folder with `test-results/` still sitting next to it as a sibling directory — a copy of `index.html` moved somewhere else on its own will show broken artifact links, since traces/videos are linked by relative path rather than embedded (they're too large to inline without bloating the report).
+- **From the command line**:
+  ```bash
+  npx playwright show-trace test-results/<test-folder>/trace.zip
+  ```
+  This opens the same interactive viewer at `http://localhost:<port>` in your default browser.
+- **Drag-and-drop, no install needed**: drop the `.zip` onto [trace.playwright.dev](https://trace.playwright.dev).
+
+**In CircleCI**, download `trace.zip` from the job's **Artifacts** tab (under `test-results/<test-folder>/`) first, then open it with either of the last two methods above.
