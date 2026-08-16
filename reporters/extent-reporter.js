@@ -1,8 +1,10 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { renderReportHtml } = require('./extentReportHtml');
 const { humanize } = require('../utils/stepLogger');
 const { sanitize } = require('../utils/sanitize');
+const { version: installedPlaywrightVersion } = require('@playwright/test/package.json');
 
 const BDD_KEYWORD_RE = /^(Given|When|Then|And|But)\b\s*/;
 
@@ -202,12 +204,88 @@ function testStatus(resultStatus) {
   return 'failed'; // failed | timedOut | interrupted
 }
 
+// Generic, project-agnostic execution/CI metadata — read directly from
+// well-known env vars (CircleCI's CIRCLE_*, GitHub Actions' GITHUB_*)
+// rather than any project-specific config module, so this reporter (and
+// extentReportHtml.js) stay portable to any Playwright project unchanged.
+// Every field is optional: a value that isn't set simply doesn't render its
+// row in the report's execution-info panel.
+function collectExecutionMeta() {
+  const shortSha = (sha) => (sha ? sha.slice(0, 7) : undefined);
+  return {
+    environment: process.env.TEST_ENV || process.env.NODE_ENV || undefined,
+    os: `${os.type()} ${os.release()}`,
+    nodeVersion: process.version,
+    playwrightVersion: installedPlaywrightVersion,
+    buildNumber: process.env.CIRCLE_BUILD_NUM || process.env.GITHUB_RUN_NUMBER || undefined,
+    branch: process.env.CIRCLE_BRANCH || process.env.GITHUB_REF_NAME || undefined,
+    commit: shortSha(process.env.CIRCLE_SHA1 || process.env.GITHUB_SHA),
+    ci: Boolean(process.env.CI),
+  };
+}
+
+function inferArtifactType(attachment) {
+  if (attachment.name === 'trace' || attachment.contentType === 'application/zip') return 'trace';
+  if (attachment.contentType && attachment.contentType.startsWith('video/')) return 'video';
+  if (attachment.contentType && attachment.contentType.startsWith('image/')) return 'screenshot';
+  if (attachment.contentType && attachment.contentType.startsWith('text/')) return 'log';
+  return 'file';
+}
+
+// Test-level artifacts (trace.zip, video.webm, Playwright's own
+// auto-captured failure screenshot, error-context.md) — distinct from the
+// step screenshot already embedded inline as base64 (see the `step`
+// fixture in fixtures/base.js). Those always carry `body`; genuine file
+// artifacts always carry `path` instead, which is what tells them apart
+// here. Paths are resolved relative to the report's own output directory
+// so a link still works if the whole report directory is moved or
+// uploaded as a unit — but note this only holds when extent-report/ keeps
+// its sibling test-results/ directory alongside it; a report file copied
+// out on its own (e.g. downloaded from a chat attachment) loses that and
+// the links 404, since there's no way to embed multi-MB traces/videos
+// inline without breaking the "keep it lightweight" goal.
+function collectArtifacts(outputDir, attachments) {
+  const absoluteOutputDir = path.resolve(outputDir);
+  const artifacts = [];
+  for (const attachment of attachments || []) {
+    if (!attachment.path) continue;
+    artifacts.push({
+      name: attachment.name,
+      type: inferArtifactType(attachment),
+      path: path.relative(absoluteOutputDir, attachment.path),
+    });
+  }
+  return artifacts;
+}
+
+// Compact per-project (per-browser) pass/fail/skip/flaky breakdown for the
+// dashboard's expandable "Projects" panel — pure aggregation over the
+// already-collected test rows, no extra Playwright capture needed. A flaky
+// test counts only toward `flaky`, never also toward `passed` — same rule
+// as the top-level dashboard counts in onEnd(), so the two never disagree.
+function buildProjectSummaries(tests) {
+  const byProject = new Map();
+  for (const t of tests) {
+    const name = t.project || 'default';
+    const summary = byProject.get(name) || { name, total: 0, passed: 0, failed: 0, skipped: 0, flaky: 0 };
+    summary.total += 1;
+    if (t.flaky) summary.flaky += 1;
+    else if (t.status === 'passed') summary.passed += 1;
+    else if (t.status === 'failed') summary.failed += 1;
+    else if (t.status === 'skipped') summary.skipped += 1;
+    byProject.set(name, summary);
+  }
+  return [...byProject.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 class ExtentReporter {
   constructor(options = {}) {
     this.outputDir = options.outputDir || 'extent-report';
     this.outputFile = options.outputFile || 'index.html';
     this.tests = new Map(); // testCase.id -> report row (last attempt wins on retry)
     this.runStartTime = 0;
+    this.executionMeta = collectExecutionMeta();
+    if (options.environment) this.executionMeta.environment = options.environment;
   }
 
   onBegin() {
@@ -223,10 +301,14 @@ class ExtentReporter {
       title: titlePath.length ? titlePath.join(' › ') : test.title,
       project: project ? project.name : '',
       status: 'passed',
+      flaky: false,
+      retry: result.retry,
+      tags: test.tags || [],
       startTime: result.startTime.getTime(),
       endTime: result.startTime.getTime(),
       durationMs: 0,
       steps: [],
+      artifacts: [],
     });
   }
 
@@ -255,6 +337,14 @@ class ExtentReporter {
     row.startTime = result.startTime.getTime();
     row.durationMs = result.duration;
     row.endTime = row.startTime + result.duration;
+    row.retry = result.retry;
+    // test.outcome() reflects *all* attempts recorded on the TestCase so
+    // far, not just this one — onTestBegin resets a fresh row on every
+    // retry, so only the row built for the *final* attempt survives into
+    // onEnd(), and by then every attempt has been recorded. Safe to read
+    // unconditionally here rather than gating on "is this the last attempt".
+    row.flaky = test.outcome() === 'flaky';
+    row.artifacts = collectArtifacts(this.outputDir, result.attachments);
 
     if (row.status === 'skipped') {
       for (const step of row.steps) step.status = 'skip';
@@ -264,7 +354,16 @@ class ExtentReporter {
   async onEnd() {
     const tests = [...this.tests.values()].sort((a, b) => a.startTime - b.startTime);
     const total = tests.length;
-    const passed = tests.filter((t) => t.status === 'passed').length;
+    // A flaky test's final `status` is 'passed' (that's its literal
+    // TestResult.status), so `passed` explicitly excludes flaky ones here —
+    // otherwise the same test would be counted in both the "Passed" and
+    // "Flaky" dashboard tiles. Chosen counting model (documented once,
+    // here): clean pass -> passed, ultimate failure -> failed, skipped ->
+    // skipped, failed-then-passed-on-retry -> flaky. Every test.id appears
+    // exactly once in `this.tests` regardless of how many retry attempts
+    // it took, so no test is ever double-counted across these buckets.
+    const flaky = tests.filter((t) => t.flaky).length;
+    const passed = tests.filter((t) => t.status === 'passed' && !t.flaky).length;
     const failed = tests.filter((t) => t.status === 'failed').length;
     const skipped = tests.filter((t) => t.status === 'skipped').length;
     const endTime = Date.now();
@@ -278,9 +377,12 @@ class ExtentReporter {
         passed,
         failed,
         skipped,
+        flaky,
         passPercent: total ? Math.round((passed / total) * 1000) / 10 : 0,
+        ...this.executionMeta,
       },
       tests,
+      projects: buildProjectSummaries(tests),
     };
 
     const html = renderReportHtml(model);
